@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CERO — Empowering Chronic Patient Care</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300F2FE' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z'/><path d='M12 5v14'/><path d='M5 12h14'/></svg>" />
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cero: {
+              dark: '#0B0F19',
+              darker: '#070A12',
+              card: 'rgba(17, 24, 39, 0.75)',
+              border: 'rgba(255, 255, 255, 0.1)',
+              cyan: '#00F2FE',
+              blue: '#4FACFE',
+              purple: '#8B5CF6',
+              emerald: '#10B981',
+              rose: '#F43F5E',
+              amber: '#F59E0B',
+            }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          boxShadow: {
+            'glow-cyan': '0 0 25px rgba(0, 242, 254, 0.35)',
+            'glow-blue': '0 0 25px rgba(79, 172, 254, 0.35)',
+            'glow-purple': '0 0 25px rgba(139, 92, 246, 0.35)',
+            'glow-red': '0 0 35px rgba(244, 63, 94, 0.5)',
+            'glow-emerald': '0 0 25px rgba(16, 185, 129, 0.35)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & ReactDOM & Babel Standalone & Canvas Confetti -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <style>
+    body {
+      background-color: #0B0F19;
+      color: #F1F5F9;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      overflow-x: hidden;
+    }
+    .glass-panel {
+      background: rgba(17, 24, 39, 0.65);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-panel-elevated {
+      background: rgba(23, 32, 54, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.45);
+    }
+    .glass-input {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #F8FAFC;
+    }
+    .glass-input:focus {
+      border-color: rgba(0, 242, 254, 0.6);
+      outline: none;
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.25);
+    }
+    .glow-text-cyan {
+      text-shadow: 0 0 12px rgba(0, 242, 254, 0.6);
+    }
+    @keyframes ecg-dash {
+      to { stroke-dashoffset: -200; }
+    }
+    .ecg-path {
+      stroke-dasharray: 200;
+      animation: ecg-dash 2s linear infinite;
+    }
+    @keyframes scan-line {
+      0%, 100% { transform: translateY(0%); }
+      50% { transform: translateY(100%); }
+    }
+    .animate-scan {
+      animation: scan-line 2.2s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="bg-[#0B0F19] text-slate-100 min-h-screen selection:bg-cyan-500 selection:text-black">
+  <div id="root"></div>
+
+  <!-- Main CERO Application React Code -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // --- Web Audio API Synthesizer (Siren, Ringtone, Chimes & Speech) ---
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+        this.sosActive = false;
+        this.sosInterval = null;
+        this.ringInterval = null;
+      }
+      getCtx() {
+        if (!this.ctx && typeof window !== 'undefined') {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) this.ctx = new AudioContextClass();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+        return this.ctx;
+      }
+      playChime() {
+        if (this.muted) return;
+        try {
+          const ctx = this.getCtx();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+          const notes = [523.25, 659.25, 783.99, 1046.50];
+          notes.forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.07);
+            gain.gain.setValueAtTime(0, now + idx * 0.07);
+            gain.gain.linearRampToValueAtTime(0.2, now + idx * 0.07 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.35);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + idx * 0.07);
+            osc.stop(now + idx * 0.07 + 0.38);
+          });
+        } catch(e) {}
+      }
+      playClick() {
+        if (this.muted) return;
+        try {
+          const ctx = this.getCtx();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(800, now);
+          osc.frequency.exponentialRampToValueAtTime(400, now + 0.05);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.05);
+        } catch(e) {}
+      }
+      startSosAlarm() {
+        this.stopSosAlarm();
+        this.sosActive = true;
+        if ('speechSynthesis' in window && !this.muted) {
+          try {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance('Emergency medical alert triggered. Emergency contacts notified.');
+            u.rate = 1.05;
+            window.speechSynthesis.speak(u);
+          } catch(e) {}
+        }
+        try {
+          let cycle = 0;
+          const playBurst = () => {
+            if (!this.sosActive || this.muted) return;
+            const ctx = this.getCtx();
+            if (!ctx) return;
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            const startFreq = cycle % 2 === 0 ? 650 : 920;
+            const endFreq = cycle % 2 === 0 ? 920 : 650;
+            osc.frequency.setValueAtTime(startFreq, now);
+            osc.frequency.linearRampToValueAtTime(endFreq, now + 0.38);
+            gain.gain.setValueAtTime(0.01, now);
+            gain.gain.linearRampToValueAtTime(0.25, now + 0.04);
+            gain.gain.setValueAtTime(0.25, now + 0.32);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.4);
+            cycle++;
+          };
+          playBurst();
+          this.sosInterval = setInterval(playBurst, 400);
+        } catch(e) {}
+      }
+      stopSosAlarm() {
+        this.sosActive = false;
+        if (this.sosInterval) {
+          clearInterval(this.sosInterval);
+          this.sosInterval = null;
+        }
+        if ('speechSynthesis' in window) {
+          try { window.speechSynthesis.cancel(); } catch(e) {}
+        }
+      }
+      startPhoneRing() {
+        if (this.muted) return;
+        this.stopPhoneRing();
+        try {
+          const playBurst = () => {
+            if (this.muted) return;
+            const ctx = this.getCtx();
+            if (!ctx) return;
+            const now = ctx.currentTime;
+            const o1 = ctx.createOscillator();
+            const o2 = ctx.createOscillator();
+            const g = ctx.createGain();
+            o1.type = 'sine';
+            o2.type = 'sine';
+            o1.frequency.setValueAtTime(440, now);
+            o2.frequency.setValueAtTime(480, now);
+            g.gain.setValueAtTime(0.01, now);
+            g.gain.linearRampToValueAtTime(0.15, now + 0.05);
+            g.gain.setValueAtTime(0.15, now + 1.2);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 1.35);
+            o1.connect(g);
+            o2.connect(g);
+            g.connect(ctx.destination);
+            o1.start(now);
+            o2.start(now);
+            o1.stop(now + 1.4);
+            o2.stop(now + 1.4);
+          };
+          playBurst();
+          this.ringInterval = setInterval(playBurst, 3200);
+        } catch(e) {}
+      }
+      stopPhoneRing() {
+        if (this.ringInterval) {
+          clearInterval(this.ringInterval);
+          this.ringInterval = null;
+        }
+      }
+      speak(text) {
+        if (this.muted) return;
+        if ('speechSynthesis' in window) {
+          try {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.rate = 0.95;
+            window.speechSynthesis.speak(u);
+          } catch(e) {}
+        }
+      }
+    }
+    const sounds = new SoundEngine();
+
+    // --- Mock Data ---
+    const initialUser = {
+      id: 'usr_ramesh_01',
+      name: 'Ramesh Sharma',
+      email: 'ramesh.sharma@cero-health.com',
+      age: 68,
+      gender: 'Male',
+      bloodGroup: 'O+',
+      primaryCondition: 'Dengue Recovery / Type-2 Diabetes / Hypertension',
+      height: 172,
+      weight: 71,
+      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+      emergencyContact: {
+        name: 'Anita Sharma',
+        phone: '+91 98765 43210',
+        relation: 'Spouse'
+      },
+      allergies: ['Penicillin', 'Sulfa Drugs'],
+      chronicConditions: ['Hypertension (Stage 1)', 'Post-Dengue Thrombocytopenia', 'Type-2 Diabetes Mellitus'],
+      joinedDate: 'October 2024'
+    };
+
+    const initialMedicines = [
+      {
+        id: 'med_1',
+        name: 'Paracetamol',
+        strength: '650mg',
+        doseQuantity: '1 Tablet',
+        timeSlot: 'Morning',
+        scheduledTime: '08:30 AM',
+        intervalHours: 6,
+        mealRelation: 'after_meal',
+        instructions: 'Take 1 tablet after breakfast for fever and body ache relief.',
+        howToTake: 'Swallow whole with a full glass of lukewarm water. Do NOT crush or chew.',
+        whatToAvoid: 'Never take on an empty stomach. Do not exceed 4 tablets in 24 hours.',
+        purpose: 'Lowers fever and relieves dengue joint pain & headaches.',
+        category: 'Fever & Pain Relief',
+        taken: true,
+        takenAt: '08:28 AM',
+        nextScheduledTime: '02:30 PM Today',
+        nextDoseTimestamp: Date.now() + 3.8 * 3600 * 1000,
+        pillColor: '#00F2FE'
+      },
+      {
+        id: 'med_2',
+        name: 'Caripill (Carica Papaya Extract)',
+        strength: '1100mg',
+        doseQuantity: '1 Tablet',
+        timeSlot: 'Morning',
+        scheduledTime: '09:00 AM',
+        intervalHours: 8,
+        mealRelation: 'after_meal',
+        instructions: 'Take 1 tablet 30 minutes after breakfast to stimulate platelet production.',
+        howToTake: 'Drink with 1 glass of fresh water. Stay sitting upright for 10 minutes.',
+        whatToAvoid: 'Do not take with hot milk or caffeinated coffee/tea.',
+        purpose: 'Boosts blood platelet count during post-dengue convalescence.',
+        category: 'Platelet Support',
+        taken: true,
+        takenAt: '09:05 AM',
+        nextScheduledTime: '05:00 PM Today',
+        nextDoseTimestamp: Date.now() + 6.3 * 3600 * 1000,
+        pillColor: '#10B981'
+      },
+      {
+        id: 'med_3',
+        name: 'Telmisartan',
+        strength: '40mg',
+        doseQuantity: '1 Tablet',
+        timeSlot: 'Afternoon',
+        scheduledTime: '01:30 PM',
+        intervalHours: 24,
+        mealRelation: 'after_meal',
+        instructions: 'Take 1 tablet immediately after lunch to maintain systolic blood pressure under 130 mmHg.',
+        howToTake: 'Swallow with water. Keep a consistent timing every afternoon.',
+        whatToAvoid: 'Avoid high-potassium supplements or salt substitutes containing potassium.',
+        purpose: 'Relaxes blood vessels and protects heart & kidneys against hypertension.',
+        category: 'Blood Pressure Control',
+        taken: false,
+        nextScheduledTime: '01:30 PM Today',
+        nextDoseTimestamp: Date.now() + 0.6 * 3600 * 1000,
+        pillColor: '#8B5CF6'
+      },
+      {
+        id: 'med_4',
+        name: 'Metformin Hydrochloride (SR)',
+        strength: '500mg',
+        doseQuantity: '1 Tablet',
+        timeSlot: 'Evening',
+        scheduledTime: '07:30 PM',
+        intervalHours: 12,
+        mealRelation: 'with_meal',
+        instructions: 'Take 1 tablet midway through dinner with your first few bites of food.',
+        howToTake: 'Take right with dinner to prevent stomach upset and stabilize blood sugar.',
+        whatToAvoid: 'Never skip your meal after taking Metformin. Avoid sugary beverages.',
+        purpose: 'Improves insulin sensitivity and keeps fasting blood glucose stable.',
+        category: 'Diabetes Care',
+        taken: false,
+        nextScheduledTime: '07:30 PM Today',
+        nextDoseTimestamp: Date.now() + 6.8 * 3600 * 1000,
+        pillColor: '#3B82F6'
+      },
+      {
+        id: 'med_5',
+        name: 'Rosuvastatin',
+        strength: '10mg',
+        doseQuantity: '1 Tablet',
+        timeSlot: 'Night',
+        scheduledTime: '09:30 PM',
+        intervalHours: 24,
+        mealRelation: 'after_meal',
+        instructions: 'Take 1 tablet before bedtime with a glass of water.',
+        howToTake: 'Take at night when the liver synthesizes cholesterol most actively.',
+        whatToAvoid: 'Avoid eating grapefruit or drinking grapefruit juice.',
+        purpose: 'Lowers LDL cholesterol and stabilizes arterial plaque.',
+        category: 'Lipid & Heart Health',
+        taken: false,
+        nextScheduledTime: '09:30 PM Tonight',
+        nextDoseTimestamp: Date.now() + 8.8 * 3600 * 1000,
+        pillColor: '#F59E0B'
+      }
+    ];
+
+    const initialDoctors = [
+      {
+        id: 'doc_1',
+        name: 'Dr. Arvind Verma',
+        title: 'MD, Senior Infectious Disease Specialist',
+        specialty: 'Dengue / Infectious Care',
+        avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=500&q=80',
+        rating: 4.95,
+        reviewsCount: 312,
+        experience: '18+ Years Exp',
+        hospital: 'AIIMS Institute of Medical Sciences',
+        fee: 900,
+        availableToday: true,
+        nextSlot: 'Today, 03:30 PM',
+        bio: 'Pioneer in vector-borne disease management, severe dengue recovery monitoring, and post-viral fatigue rehabilitation.',
+        badge: 'AIIMS Chief Consultant'
+      },
+      {
+        id: 'doc_2',
+        name: 'Dr. Sunita Kulkarni',
+        title: 'DM Cardiology, Chief Interventional Cardiologist',
+        specialty: 'Cardiology',
+        avatar: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=500&q=80',
+        rating: 4.92,
+        reviewsCount: 284,
+        experience: '16+ Years Exp',
+        hospital: 'Apollo Heart Institute',
+        fee: 1200,
+        availableToday: true,
+        nextSlot: 'Today, 04:15 PM',
+        bio: 'Specialist in geriatric blood pressure control, coronary artery disease prevention, and post-stroke vascular health.',
+        badge: 'Senior Fellow ACC'
+      },
+      {
+        id: 'doc_3',
+        name: 'Dr. Rajeshwari Nair',
+        title: 'MD, Senior Diabetologist & Endocrinologist',
+        specialty: 'General Physician',
+        avatar: 'https://images.unsplash.com/photo-1594824813680-e83786196236?auto=format&fit=crop&w=500&q=80',
+        rating: 4.88,
+        reviewsCount: 219,
+        experience: '14+ Years Exp',
+        hospital: 'Fortis Healthcare & Diabetes Research',
+        fee: 850,
+        availableToday: false,
+        nextSlot: 'Tomorrow, 10:00 AM',
+        bio: 'Renowned expert in continuous glucose monitoring, diabetic nutritional therapy, and metabolic syndrome reversal.',
+        badge: 'IDF Gold Medalist'
+      }
+    ];
+
+    const initialLabReports = [
+      {
+        id: 'rep_1',
+        title: 'Complete Blood Count (CBC) & Platelet Serology',
+        category: 'Hematology / Dengue Panel',
+        date: 'Oct 08, 2026',
+        doctorName: 'Dr. Arvind Verma',
+        hospital: 'AIIMS Central Diagnostic Lab',
+        status: 'Normal',
+        fileSize: '2.4 MB PDF',
+        findings: [
+          { parameter: 'Platelet Count', value: '112,000', unit: '/µL', range: '150,000 - 450,000', status: 'low' },
+          { parameter: 'Hemoglobin (Hb)', value: '13.8', unit: 'g/dL', range: '13.0 - 17.0', status: 'normal' },
+          { parameter: 'Total Leucocyte Count (TLC)', value: '6,400', unit: '/µL', range: '4,000 - 11,000', status: 'normal' },
+          { parameter: 'Hematocrit (PCV)', value: '41.5', unit: '%', range: '40.0 - 50.0', status: 'normal' },
+          { parameter: 'Dengue NS1 Antigen', value: 'Negative', unit: 'Index', range: 'Negative (<0.9)', status: 'normal' }
+        ],
+        summary: 'Significant recovery noted. Platelet count recovered from nadir of 42,000 to 112,000 /µL. NS1 is now negative, indicating active viremia has cleared. Continue oral hydration 3L/day and Caripill.'
+      },
+      {
+        id: 'rep_2',
+        title: 'Glycated Hemoglobin (HbA1c) & Fasting Glucose',
+        category: 'Endocrinology / Diabetes Panel',
+        date: 'Oct 02, 2026',
+        doctorName: 'Dr. Rajeshwari Nair',
+        hospital: 'Fortis Diagnostics Centre',
+        status: 'Attention',
+        fileSize: '1.8 MB PDF',
+        findings: [
+          { parameter: 'Fasting Plasma Glucose', value: '114', unit: 'mg/dL', range: '70 - 100', status: 'high' },
+          { parameter: 'HbA1c', value: '6.7', unit: '%', range: '< 5.7', status: 'high' }
+        ],
+        summary: 'HbA1c stands at 6.7% indicating well-controlled Type-2 Diabetes on oral Metformin 500mg. Fasting glucose stable at 114 mg/dL. Low GI diet recommended.'
+      }
+    ];
+
+    // --- App Component ---
+    function App() {
+      // Navigation & Modals
+      const [splashDone, setSplashDone] = useState(false);
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [emergencySOSOpen, setEmergencySOSOpen] = useState(false);
+      const [isAlarmMuted, setIsAlarmMuted] = useState(false);
+      const [ivrCallOpen, setIvrCallOpen] = useState(false);
+      const [profileModalOpen, setProfileModalOpen] = useState(false);
+      const [ocrOpen, setOcrOpen] = useState(false);
+      const [videoConsultDoctor, setVideoConsultDoctor] = useState(null);
+
+      // Data States
+      const [user, setUser] = useState(initialUser);
+      const [medicines, setMedicines] = useState(initialMedicines);
+      const [vitals, setVitals] = useState({
+        heartRate: 72,
+        bloodPressureSys: 120,
+        bloodPressureDia: 80,
+        oxygenLevel: 98,
+        bodyTemp: 98.6,
+        bloodSugar: 114,
+        plateletCount: 112000,
+        lastUpdated: '10 mins ago'
+      });
+      const [toasts, setToasts] = useState([]);
+      const [waterGlasses, setWaterGlasses] = useState(7);
+      const [doctorMessages, setDoctorMessages] = useState([
+        {
+          id: '1',
+          sender: 'doctor',
+          doctorName: 'Dr. Arvind Verma',
+          text: 'Good morning Ramesh ji. Your platelet count is recovering nicely at 112,000 /µL. Keep up 3L hydration and Caripill.',
+          timestamp: '08:15 AM Today'
+        }
+      ]);
+
+      // Splash 2.5s timer
+      useEffect(() => {
+        const timer = setTimeout(() => setSplashDone(true), 2500);
+        return () => clearTimeout(timer);
+      }, []);
+
+      // Toast helper
+      const addToast = (type, title, message) => {
+        const id = 't_' + Math.random().toString(36).substr(2, 9);
+        setToasts(prev => [...prev, { id, type, title, message }]);
+        setTimeout(() => {
+          setToasts(prev => prev.filter(t => t.id !== id));
+        }, 4500);
+      };
+
+      // Medicine toggle with next dose auto-calculation
+      const toggleMedicineTaken = (id) => {
+        setMedicines(prev => prev.map(med => {
+          if (med.id === id) {
+            const nextTaken = !med.taken;
+            if (nextTaken) {
+              if (window.confetti) {
+                confetti({
+                  particleCount: 85,
+                  spread: 60,
+                  origin: { y: 0.65 },
+                  colors: ['#00F2FE', '#4FACFE', '#10B981', '#8B5CF6', '#F59E0B']
+                });
+              }
+              sounds.playChime();
+              const now = new Date();
+              const nowTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const nextTime = new Date(now.getTime() + (med.intervalHours || 6) * 3600 * 1000);
+              const nextTimeStr = `${nextTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${nextTime.getDate() !== now.getDate() ? 'Tomorrow' : 'Today'}`;
+
+              addToast('success', `${med.name} (${med.strength}) Taken!`, `Next dose automatically scheduled for ${nextTimeStr} (in ${med.intervalHours} hours).`);
+
+              return {
+                ...med,
+                taken: true,
+                takenAt: nowTime,
+                nextScheduledTime: nextTimeStr,
+                nextDoseTimestamp: nextTime.getTime()
+              };
+            } else {
+              addToast('info', `${med.name} marked as Pending`, 'Dose status updated.');
+              return { ...med, taken: false, takenAt: null };
+            }
+          }
+          return med;
+        }));
+      };
+
+      // Voice Read Aloud for elderly patients
+      const handleSpeakMed = (med) => {
+        const text = `${med.name}, ${med.strength}. Take ${med.doseQuantity} during ${med.timeSlot} at ${med.scheduledTime}. ${med.instructions}. How to take: ${med.howToTake}. Important warning: ${med.whatToAvoid}.`;
+        sounds.speak(text);
+        addToast('info', `Reading Aloud: ${med.name}`, 'Audio instructions playing.');
+      };
+
+      // Adherence rate
+      const totalMeds = medicines.length;
+      const takenMeds = medicines.filter(m => m.taken).length;
+      const adherenceRate = totalMeds > 0 ? Math.round((takenMeds / totalMeds) * 100) : 0;
+      const nextMed = medicines.find(m => !m.taken) || null;
+
+      // SOS Trigger
+      const handleOpenSOS = () => {
+        setEmergencySOSOpen(true);
+        if (!isAlarmMuted) sounds.startSosAlarm();
+      };
+      const handleCloseSOS = () => {
+        sounds.stopSosAlarm();
+        setEmergencySOSOpen(false);
+      };
+      const toggleMuteSOS = () => {
+        const next = !isAlarmMuted;
+        setIsAlarmMuted(next);
+        if (next) sounds.stopSosAlarm();
+        else sounds.startSosAlarm();
+      };
+
+      // IVR Reminder
+      const handleTriggerIVR = (med) => {
+        setIvrCallOpen(true);
+        sounds.startPhoneRing();
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col bg-[#0B0F19]">
+          {/* 1. Splash Screen */}
+          {!splashDone && (
+            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#070A12] text-center px-6 transition-opacity duration-500">
+              <div className="w-20 h-20 rounded-3xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center shadow-glow-cyan mb-4 animate-pulse">
+                <svg className="w-10 h-10 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-black bg-gradient-to-r from-cyan-300 via-teal-200 to-blue-400 bg-clip-text text-transparent glow-text-cyan">
+                CERO
+              </h1>
+              <p className="text-sm font-semibold text-slate-300 mt-2 tracking-wide">
+                Empowering Chronic Patient Care
+              </p>
+              <div className="w-64 my-6">
+                <svg className="w-full h-10" viewBox="0 0 300 60">
+                  <path d="M 0 30 L 70 30 L 80 15 L 90 45 L 100 10 L 115 50 L 125 30 L 140 30 L 150 20 L 160 40 L 170 30 L 300 30" fill="none" stroke="#00F2FE" strokeWidth="3" className="ecg-path" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <button onClick={() => setSplashDone(true)} className="text-xs text-slate-400 underline hover:text-cyan-300">
+                Skip Intro
+              </button>
+            </div>
+          )}
+
+          {/* 2. Top Sticky Glassmorphic Navbar */}
+          <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#0B0F19]/85 backdrop-blur-xl">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
+              {/* Brand Logo */}
+              <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setActiveTab('dashboard'); sounds.playClick(); }}>
+                <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center shadow-glow-cyan">
+                  <svg className="w-6 h-6 text-cyan-400 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-2xl font-black bg-gradient-to-r from-cyan-300 to-blue-400 bg-clip-text text-transparent glow-text-cyan">CERO</span>
+                    <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">v1.0</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium">Chronic Care &amp; Doctor Bridge</p>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <nav className="hidden lg:flex items-center gap-1 bg-slate-900/60 p-1.5 rounded-2xl border border-white/10">
+                {[
+                  { id: 'dashboard', label: 'Dashboard' },
+                  { id: 'medicines', label: 'Medicine Schedule' },
+                  { id: 'symptom-checker', label: 'AI Health Assistant' },
+                  { id: 'doctors', label: 'Doctor Consult' },
+                  { id: 'profile', label: 'Patient Profile' }
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => { setActiveTab(t.id); sounds.playClick(); }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                      activeTab === t.id
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-glow-cyan'
+                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </nav>
+
+              {/* Quick Action Items */}
+              <div className="flex items-center gap-3">
+                {/* Emergency SOS Button */}
+                <button
+                  onClick={handleOpenSOS}
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-extrabold text-xs shadow-glow-red animate-pulse"
+                >
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  <span>SOS 108</span>
+                </button>
+
+                {/* Profile Widget */}
+                <div
+                  onClick={() => setProfileModalOpen(true)}
+                  className="flex items-center gap-2 p-1.5 pr-3 rounded-2xl bg-slate-900 border border-white/10 hover:border-cyan-400/40 cursor-pointer transition-all"
+                >
+                  <img src={user.avatar} className="w-8 h-8 rounded-xl object-cover border border-cyan-400/40" />
+                  <div className="hidden sm:block text-left text-xs">
+                    <p className="font-bold text-white leading-tight">{user.name}</p>
+                    <p className="text-[10px] text-cyan-300">{user.bloodGroup} • {user.age} Yrs</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* 3. Main Body Container */}
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 pb-20">
+            {/* Mobile Tab Pills */}
+            <div className="lg:hidden flex gap-1.5 overflow-x-auto pb-3 mb-4 scrollbar-none">
+              {[
+                { id: 'dashboard', label: 'Dashboard' },
+                { id: 'medicines', label: 'Medicines' },
+                { id: 'symptom-checker', label: 'AI Checker' },
+                { id: 'doctors', label: 'Doctors' },
+                { id: 'profile', label: 'Profile' }
+              ].map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => { setActiveTab(t.id); sounds.playClick(); }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap ${
+                    activeTab === t.id ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400' : 'bg-slate-900 text-slate-400'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* PAGE 1: DASHBOARD */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6">
+                {/* Greeting Banner */}
+                <div className="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      Personalized Health Snapshot
+                    </span>
+                    <h1 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">
+                      Namaste, <span className="bg-gradient-to-r from-cyan-300 to-blue-400 bg-clip-text text-transparent">{user.name}</span>
+                    </h1>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                      Managing <strong className="text-cyan-300">{user.primaryCondition}</strong>. Vitals telemetry is active and synced with AIIMS specialists.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-slate-900 border border-white/10 text-xs">
+                    <p className="font-bold text-white">Platelet Count: 112,000 /µL</p>
+                    <p className="text-emerald-400 text-[11px] font-semibold">Steady Recovery (+18k from nadir)</p>
+                  </div>
+                </div>
+
+                {/* Stat Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {/* Adherence */}
+                  <div className="glass-panel p-5 rounded-3xl flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 font-semibold uppercase">Daily Adherence</span>
+                      <h3 className="text-3xl font-extrabold text-white mt-1">{adherenceRate}%</h3>
+                      <p className="text-xs text-cyan-400 mt-1">{takenMeds} of {totalMeds} Doses Taken</p>
+                    </div>
+                    <div className="w-16 h-16 rounded-full border-4 border-cyan-400 flex items-center justify-center font-bold text-sm text-cyan-300 shadow-glow-cyan">
+                      {adherenceRate}%
+                    </div>
+                  </div>
+
+                  {/* Next Dose */}
+                  <div className="glass-panel p-5 rounded-3xl flex flex-col justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 font-semibold uppercase">Next Dose Countdown</span>
+                      {nextMed ? (
+                        <>
+                          <h4 className="text-lg font-bold text-white mt-1">{nextMed.name} ({nextMed.strength})</h4>
+                          <p className="text-xs text-cyan-300">Due: {nextMed.scheduledTime} • {nextMed.instructions}</p>
+                        </>
+                      ) : (
+                        <p className="text-emerald-400 text-sm font-bold mt-2">All doses completed today!</p>
+                      )}
+                    </div>
+                    {nextMed && (
+                      <button
+                        onClick={() => toggleMedicineTaken(nextMed.id)}
+                        className="mt-3 py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs shadow-glow-cyan"
+                      >
+                        Take Dose Now
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Hydration */}
+                  <div className="glass-panel p-5 rounded-3xl flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-slate-400 font-semibold uppercase">Oral Hydration Target</span>
+                        <span className="text-xs text-cyan-400 font-bold">{(waterGlasses * 0.25).toFixed(2)}L / 3.0L</span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-1">Critical for dengue hematocrit stabilization</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setWaterGlasses(prev => Math.min(16, prev + 1));
+                        sounds.playClick();
+                        addToast('success', 'Hydration Logged', '+250ml fluids recorded.');
+                      }}
+                      className="mt-3 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-400/30 text-xs font-bold"
+                    >
+                      + 250ml Glass of Water/ORS
+                    </button>
+                  </div>
+                </div>
+
+                {/* Vitals Telemetry */}
+                <div className="glass-panel p-6 rounded-3xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>Live Biometric Vitals Monitor</span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    </h2>
+                    <span className="text-xs text-slate-400 font-mono">Updated: Just now</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {[
+                      { label: 'Heart Rate', val: `${vitals.heartRate} BPM`, status: 'Normal' },
+                      { label: 'Blood Pressure', val: `${vitals.bloodPressureSys}/${vitals.bloodPressureDia} mmHg`, status: 'Optimal' },
+                      { label: 'Blood Oxygen', val: `${vitals.oxygenLevel}% SpO2`, status: 'Excellent' },
+                      { label: 'Body Temp', val: `${vitals.bodyTemp}°F`, status: 'Afebrile' },
+                      { label: 'Blood Glucose', val: `${vitals.bloodSugar} mg/dL`, status: 'Normal' }
+                    ].map((v, i) => (
+                      <div key={i} className="p-3.5 rounded-2xl bg-slate-900 border border-white/5">
+                        <p className="text-[11px] text-slate-400">{v.label}</p>
+                        <p className="text-lg font-black text-white mt-0.5">{v.val}</p>
+                        <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
+                          {v.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* PAGE 2: MEDICINE SCHEDULE */}
+            {activeTab === 'medicines' && (
+              <div className="space-y-6">
+                <div className="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Smart Medicine Schedule</h1>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                      Clear dosage instructions. Next dose timing updates automatically upon taking any dose.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleTriggerIVR()}
+                      className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs"
+                    >
+                      📞 Simulate Overdue Call
+                    </button>
+                    <button
+                      onClick={() => setOcrOpen(true)}
+                      className="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 font-bold text-xs"
+                    >
+                      📷 Scan Doctor Rx (OCR)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Medicine Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {medicines.map(med => (
+                    <div
+                      key={med.id}
+                      className={`glass-panel p-6 rounded-3xl border transition-all flex flex-col justify-between ${
+                        med.taken ? 'border-emerald-500/40 bg-emerald-950/10' : 'border-white/10 hover:border-cyan-400/40'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-10 h-10 rounded-2xl flex items-center justify-center border font-bold text-lg"
+                              style={{ backgroundColor: `${med.pillColor}20`, borderColor: `${med.pillColor}70`, color: med.pillColor }}
+                            >
+                              💊
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-base font-bold text-white">{med.name}</h3>
+                                <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300">
+                                  {med.strength}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-400 mt-0.5">{med.category} • {med.doseQuantity}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleSpeakMed(med)}
+                              className="p-2 rounded-xl bg-slate-900 border border-white/10 text-slate-300 hover:text-cyan-300 transition-colors"
+                              title="Read instructions aloud"
+                            >
+                              🔊 Read Aloud
+                            </button>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              med.taken ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                            }`}>
+                              {med.taken ? 'Completed' : 'Pending'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Step-by-step patient clarity */}
+                        <div className="mt-4 p-3.5 rounded-2xl bg-slate-900 border border-white/5 space-y-2 text-xs">
+                          <div className="grid grid-cols-2 gap-2 text-slate-300 pb-1.5 border-b border-white/5">
+                            <div>
+                              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Required Dosage</span>
+                              <strong className="text-white">{med.doseQuantity} ({med.strength})</strong>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 uppercase font-semibold block">When to Take</span>
+                              <strong className="text-amber-300">{med.timeSlot} ({med.scheduledTime})</strong>
+                            </div>
+                          </div>
+                          <p className="text-cyan-200 font-semibold">🍽️ Meal Rule: {med.instructions}</p>
+                          <p className="text-slate-300 text-[11px]">💧 How to Take: {med.howToTake}</p>
+                          <p className="text-amber-300/90 text-[11px]">⚠️ What to Avoid: {med.whatToAvoid}</p>
+                        </div>
+
+                        <div className="mt-3 p-3 rounded-xl bg-slate-950 text-xs flex justify-between items-center border border-white/5">
+                          <span className="text-slate-400 text-[10px] uppercase font-bold">Next Dose Timing</span>
+                          <span className="text-cyan-300 font-mono font-bold">
+                            {med.taken ? `Next dose: ${med.nextScheduledTime}` : `Scheduled: ${med.scheduledTime}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => toggleMedicineTaken(med.id)}
+                        className={`mt-4 py-3 px-4 rounded-xl text-xs font-bold transition-all ${
+                          med.taken
+                            ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                            : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black shadow-glow-cyan'
+                        }`}
+                      >
+                        {med.taken ? 'Mark as Not Taken (Undo)' : 'Take Medicine (Mark Completed)'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* PAGE 3: AI HEALTH ASSISTANT */}
+            {activeTab === 'symptom-checker' && (
+              <div className="space-y-6">
+                <div className="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-extrabold text-white">CERO Clinical AI Assistant</h1>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                      Multi-functional symptom triage, nutritional coach, and lab report explainer.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+                    <strong>AI Advisory Only:</strong> Not a formal diagnosis. Seek medical care in emergencies.
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Chat / Query */}
+                  <div className="glass-panel p-5 rounded-3xl flex flex-col h-[460px]">
+                    <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
+                      <div className="p-3.5 rounded-2xl bg-slate-900 border border-white/10 text-slate-200">
+                        Hello Ramesh ji. I am your chronic care AI assistant. How is your recovery today? You can ask about joint aches, platelet foods, or blood pressure.
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-cyan-600/20 border border-cyan-400/30 text-white ml-8">
+                        My temperature is 98.6°F, but I feel slight fatigue in the legs. Are my platelets still okay?
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-slate-900 border border-white/10 text-slate-200">
+                        Your latest CBC report shows 112,000 /µL platelets (up from 42k nadir). Mild leg fatigue is normal post-dengue convalescence. Continue 3L fluids and Caripill 1100mg after breakfast.
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/10 flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Describe current symptoms or ask dietary queries..."
+                        className="flex-1 px-3 py-2 rounded-xl glass-input text-xs"
+                      />
+                      <button
+                        onClick={() => { sounds.playClick(); addToast('info', 'AI Advisory Generated', 'Clinical parameters analyzed.'); }}
+                        className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs"
+                      >
+                        Ask AI
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Triage Card */}
+                  <div className="glass-panel p-6 rounded-3xl border border-emerald-500/30 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs uppercase font-bold text-slate-400">Triage Assessment</span>
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500">
+                        Risk: Low (Convalescent Phase)
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-white">Post-Dengue Convalescence &amp; BP Stabilization</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Platelet count has crossed safe recovery threshold (&gt; 100k). Blood pressure is stable at 120/80 mmHg. No active viremia detected.
+                    </p>
+
+                    <div className="p-3.5 rounded-2xl bg-slate-900 border border-white/5 space-y-2 text-xs">
+                      <p className="font-bold text-cyan-300">Recommended Clinical Actions:</p>
+                      <ul className="list-disc pl-4 space-y-1 text-slate-200 text-[11px]">
+                        <li>Maintain 3L oral fluid intake (coconut water &amp; ORS)</li>
+                        <li>Take Caripill 1100mg TID after meals</li>
+                        <li>Follow up CBC serology with Dr. Arvind Verma on Friday</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* PAGE 4: DOCTOR CONSULT */}
+            {activeTab === 'doctors' && (
+              <div className="space-y-6">
+                <div className="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Doctor Consultation &amp; Telehealth</h1>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                      Direct appointments and instant video consultation with verified specialists.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-slate-900 border border-white/10 text-xs">
+                    <span className="text-cyan-300 font-bold">Primary Consultant:</span> Dr. Arvind Verma (AIIMS)
+                  </div>
+                </div>
+
+                {/* Doctor Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {initialDoctors.map(doc => (
+                    <div key={doc.id} className="glass-panel p-5 rounded-3xl flex flex-col justify-between">
+                      <div>
+                        <img src={doc.avatar} className="w-full h-40 object-cover rounded-2xl border border-white/10 mb-3" />
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300">{doc.badge}</span>
+                        <h3 className="text-base font-bold text-white mt-1">{doc.name}</h3>
+                        <p className="text-xs text-slate-400">{doc.specialty} • {doc.hospital}</p>
+                        <p className="text-xs text-slate-300 mt-2 line-clamp-2">{doc.bio}</p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-white/10 flex gap-2">
+                        <button
+                          onClick={() => {
+                            setVideoConsultDoctor(doc);
+                            sounds.playClick();
+                          }}
+                          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs shadow-glow-cyan"
+                        >
+                          📹 Instant Video Call
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* PAGE 5: PATIENT PROFILE */}
+            {activeTab === 'profile' && (
+              <div className="space-y-6">
+                <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+                  <div className="flex items-center gap-4">
+                    <img src={user.avatar} className="w-20 h-20 rounded-2xl object-cover border-2 border-cyan-400 shadow-glow-cyan" />
+                    <div>
+                      <h1 className="text-2xl font-black text-white">{user.name}</h1>
+                      <p className="text-xs text-cyan-300">{user.age} Yrs • {user.gender} • Blood Group: <strong className="text-white">{user.bloodGroup}</strong></p>
+                      <p className="text-xs text-slate-300 mt-1">Condition: {user.primaryCondition}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setProfileModalOpen(true)}
+                    className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs"
+                  >
+                    Edit Health Profile
+                  </button>
+                </div>
+
+                {/* Lab Records Vault */}
+                <div className="glass-panel p-6 rounded-3xl space-y-4">
+                  <h3 className="text-lg font-bold text-white">Medical History &amp; Lab Reports Vault</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {initialLabReports.map(rep => (
+                      <div key={rep.id} className="p-4 rounded-2xl bg-slate-900 border border-white/10 space-y-2">
+                        <div className="flex justify-between items-start">
+                          <h4 className="text-sm font-bold text-white">{rep.title}</h4>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">{rep.status}</span>
+                        </div>
+                        <p className="text-xs text-slate-400">{rep.hospital} • {rep.date}</p>
+                        <p className="text-xs text-slate-300 bg-white/5 p-2.5 rounded-xl leading-relaxed">{rep.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* Emergency SOS Modal */}
+          {emergencySOSOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-2xl">
+              <div className="relative w-full max-w-lg p-6 sm:p-8 rounded-3xl bg-slate-950 border-2 border-rose-500 shadow-glow-red text-white text-center space-y-5">
+                <div className="w-16 h-16 mx-auto rounded-full bg-rose-500/20 border-2 border-rose-500 flex items-center justify-center text-3xl animate-pulse">
+                  🚨
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-rose-400">EMERGENCY SOS ALERT</h3>
+                  <p className="text-xs text-rose-200 mt-1">CERO Medical Dispatch System &amp; Siren Activated</p>
+                </div>
+
+                {/* Siren sound control & sound wave */}
+                <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-rose-200">Paramedic Siren: {isAlarmMuted ? 'Muted' : 'Sounding loudly'}</span>
+                    <div className="flex gap-2">
+                      <button onClick={toggleMuteSOS} className="px-3 py-1 rounded-xl bg-slate-900 border border-rose-500/30 text-rose-300 font-bold">
+                        {isAlarmMuted ? '🔊 Unmute Siren' : '🔇 Mute Siren'}
+                      </button>
+                      <button onClick={() => { sounds.startSosAlarm(); addToast('info', 'Audible Siren Triggered', 'Siren audio active.'); }} className="px-3 py-1 rounded-xl bg-rose-600 text-white font-bold">
+                        Test Audio
+                      </button>
+                    </div>
+                  </div>
+                  {!isAlarmMuted && (
+                    <div className="flex items-center justify-center gap-1 h-5 pt-1">
+                      {[30, 80, 100, 60, 90, 45, 80, 100, 70, 50, 90, 60, 95, 40, 85, 100].map((h, i) => (
+                        <div key={i} className="w-1 bg-rose-400 rounded-full animate-pulse" style={{ height: `${h}%`, animationDuration: `${0.3 + (i % 4) * 0.15}s` }} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-900 text-left text-xs space-y-1">
+                  <p className="text-slate-400">GPS Location: <strong className="text-cyan-300 font-mono">28.6139° N, 77.2090° E</strong></p>
+                  <p className="text-slate-200 font-semibold">Connaught Place, Central District, New Delhi</p>
+                  <p className="text-emerald-400 font-semibold pt-1">SMS Alert Dispatched to {user.emergencyContact.name} ({user.emergencyContact.phone})</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={handleCloseSOS} className="flex-1 py-3 rounded-xl bg-slate-800 text-xs font-bold hover:bg-slate-700">
+                    Cancel SOS (I am Safe)
+                  </button>
+                  <button onClick={() => addToast('error', '108 Ambulance Call', 'Calling 108 Emergency')} className="flex-1 py-3 rounded-xl bg-rose-600 text-xs font-bold hover:bg-rose-500">
+                    Call 108 Ambulance
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* IVR Call Modal */}
+          {ivrCallOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-2xl">
+              <div className="w-full max-w-md p-6 rounded-3xl bg-slate-950 border border-cyan-500 shadow-glow-cyan text-white text-center space-y-5">
+                <div className="w-20 h-20 mx-auto rounded-full bg-cyan-500/20 border border-cyan-400 flex items-center justify-center text-3xl animate-bounce">
+                  📞
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">Incoming CERO Reminder Call</h3>
+                  <p className="text-xs text-slate-400">+1 (800) CERO-CARE • Automated IVR</p>
+                </div>
+                <p className="text-xs text-slate-200 bg-slate-900 p-3 rounded-xl">
+                  &ldquo;Hello {user.name}, this is your scheduled reminder for Paracetamol 650mg. Please take your dose with water.&rdquo;
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => { sounds.stopPhoneRing(); setIvrCallOpen(false); }} className="flex-1 py-2.5 rounded-xl bg-rose-600 text-xs font-bold">
+                    Decline
+                  </button>
+                  <button onClick={() => {
+                    sounds.stopPhoneRing();
+                    setIvrCallOpen(false);
+                    toggleMedicineTaken('med_1');
+                  }} className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-black text-xs font-bold">
+                    Press 1: Mark Taken
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Video Consult Modal */}
+          {videoConsultDoctor && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-2xl">
+              <div className="w-full max-w-4xl h-[80vh] rounded-3xl bg-slate-950 border border-cyan-500/40 p-6 flex flex-col justify-between text-white">
+                <div className="flex justify-between items-center pb-3 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-sm font-bold">CERO Telehealth HD Video: {videoConsultDoctor.name}</span>
+                  </div>
+                  <button onClick={() => setVideoConsultDoctor(null)} className="px-3 py-1.5 rounded-xl bg-rose-600 text-xs font-bold">
+                    Leave Call
+                  </button>
+                </div>
+
+                <div className="flex-1 my-4 rounded-2xl overflow-hidden relative bg-slate-900 flex items-center justify-center">
+                  <img src={videoConsultDoctor.avatar} className="w-full h-full object-cover" />
+                  <div className="absolute bottom-4 right-4 w-36 h-24 rounded-xl overflow-hidden border-2 border-cyan-400 shadow-xl">
+                    <img src={user.avatar} className="w-full h-full object-cover" />
+                  </div>
+                </div>
+
+                <div className="flex justify-center gap-3">
+                  <button onClick={() => addToast('info', 'Mic Toggled', '')} className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-bold">
+                    🎤 Toggle Mic
+                  </button>
+                  <button onClick={() => addToast('info', 'Camera Toggled', '')} className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-bold">
+                    📹 Toggle Video
+                  </button>
+                  <button onClick={() => setVideoConsultDoctor(null)} className="px-5 py-2 rounded-xl bg-rose-600 text-xs font-bold">
+                    End Consult
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Prescription OCR Modal */}
+          {ocrOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">
+              <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-cyan-400 text-white space-y-4">
+                <h3 className="text-base font-bold">AI Prescription OCR Scanner</h3>
+                <div className="p-8 border-2 border-dashed border-cyan-500/40 rounded-2xl text-center text-xs text-slate-300">
+                  📄 Doctor Prescription Scanned: Caripill 1100mg TID &amp; Telmisartan 40mg
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setOcrOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-xs">Close</button>
+                  <button onClick={() => { setOcrOpen(false); addToast('success', 'Prescription Imported', 'Medicines added to schedule.'); }} className="px-4 py-2 rounded-xl bg-cyan-500 text-black text-xs font-bold">Add to Schedule</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Profile Setup Modal */}
+          {profileModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">
+              <div className="w-full max-w-lg p-6 rounded-3xl bg-slate-900 border border-cyan-400 text-white space-y-4">
+                <h3 className="text-lg font-bold">Edit Patient Profile</h3>
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-slate-400 mb-1">Full Name</label>
+                    <input type="text" value={user.name} onChange={e => setUser({...user, name: e.target.value})} className="w-full p-2.5 rounded-xl glass-input" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Age</label>
+                      <input type="number" value={user.age} onChange={e => setUser({...user, age: Number(e.target.value)})} className="w-full p-2.5 rounded-xl glass-input" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Blood Group</label>
+                      <input type="text" value={user.bloodGroup} onChange={e => setUser({...user, bloodGroup: e.target.value})} className="w-full p-2.5 rounded-xl glass-input" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Emergency Contact Phone</label>
+                    <input type="text" value={user.emergencyContact.phone} onChange={e => setUser({...user, emergencyContact: {...user.emergencyContact, phone: e.target.value}})} className="w-full p-2.5 rounded-xl glass-input font-mono" />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button onClick={() => setProfileModalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-bold">Cancel</button>
+                  <button onClick={() => { setProfileModalOpen(false); addToast('success', 'Profile Updated', 'Health metrics synced.'); }} className="px-4 py-2 rounded-xl bg-cyan-500 text-black text-xs font-bold">Save Changes</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Toast Container */}
+          <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+            {toasts.map(t => (
+              <div key={t.id} className="pointer-events-auto p-3.5 rounded-2xl bg-slate-900/95 border border-cyan-400/40 text-xs text-white shadow-2xl">
+                <p className="font-bold text-cyan-300">{t.title}</p>
+                {t.message && <p className="text-slate-300 mt-0.5">{t.message}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
